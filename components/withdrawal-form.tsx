@@ -28,9 +28,10 @@ const formSchema = z.object({
 interface WithdrawalFormProps {
   jarId: string
   maxAmount?: string
+  onWithdrawSuccess?: () => void
 }
 
-export function WithdrawalForm({ jarId, maxAmount }: WithdrawalFormProps) {
+export function WithdrawalForm({ jarId, maxAmount, onWithdrawSuccess }: WithdrawalFormProps) {
   const { address } = useAccount()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -71,6 +72,12 @@ export function WithdrawalForm({ jarId, maxAmount }: WithdrawalFormProps) {
           description: "Your funds have been withdrawn successfully.",
         })
         form.reset()
+        setIsSubmitting(false)
+        
+        // Call success callback if provided
+        if (onWithdrawSuccess) {
+          onWithdrawSuccess()
+        }
       })
     },
     onError(error) {
@@ -167,4 +174,3 @@ export function WithdrawalForm({ jarId, maxAmount }: WithdrawalFormProps) {
     </Card>
   )
 }
-

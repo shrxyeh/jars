@@ -10,6 +10,8 @@ import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 interface Claim {
   claimer: string
@@ -25,51 +27,87 @@ interface ClaimHistoryProps {
 export function ClaimHistory({ jarId }: ClaimHistoryProps) {
   const [claims, setClaims] = useState<Claim[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const { jarDetails } = useJarDetails(jarId)
   const contractAddress = getContractAddress(jarDetails?.chainId)
 
-  const { data: claimsCount } = useContractRead({
+  // Get the number of claims for this jar
+  const { data: claimsCount, isLoading: isLoadingCount, isError: isErrorCount } = useContractRead({
     address: contractAddress,
     abi: JarSystemABI,
     functionName: "getJarClaimsCount",
     args: [BigInt(jarId)],
+    enabled: Boolean(contractAddress && jarId),
   })
+
+  // Fetch claim details from the smart contract directly (no API needed)
+  async function fetchClaim(index: number): Promise<Claim | null> {
+    if (!contractAddress) return null;
+    
+    try {
+      const { data } = await useContractRead({
+        address: contractAddress,
+        abi: JarSystemABI,
+        functionName: "getJarClaim",
+        args: [BigInt(jarId), BigInt(index)],
+      });
+      
+      if (data) {
+        const [claimer, amount, reason, timestamp] = data as [string, bigint, string, bigint];
+        return {
+          claimer,
+          amount: amount.toString(),
+          reason,
+          timestamp: Number(timestamp)
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error(`Error fetching claim ${index}:`, err);
+      return null;
+    }
+  }
+
+  // Alternative: Fetch claims using our API route
+  async function fetchClaimViaAPI(index: number): Promise<Claim | null> {
+    try {
+      const result = await fetch(`/api/claims?jarId=${jarId}&index=${index}`);
+      if (!result.ok) throw new Error("Failed to fetch claim");
+      return await result.json();
+    } catch (error) {
+      console.error("Error fetching claim:", error);
+      return null;
+    }
+  }
 
   useEffect(() => {
     async function fetchClaims() {
-      if (!claimsCount || !contractAddress) return
+      if (!claimsCount || !contractAddress) return;
 
-      setIsLoading(true)
-      const fetchedClaims: Claim[] = []
+      setIsLoading(true);
+      setError(null);
+      const fetchedClaims: Claim[] = [];
 
-      for (let i = 0; i < Number(claimsCount); i++) {
-        try {
-          const claim = await fetchClaim(i)
+      try {
+        for (let i = 0; i < Number(claimsCount); i++) {
+          // Use the API route since it's already implemented
+          const claim = await fetchClaimViaAPI(i);
           if (claim) {
-            fetchedClaims.push(claim)
+            fetchedClaims.push(claim);
           }
-        } catch (error) {
-          console.error(`Error fetching claim ${i}:`, error)
         }
+
+        setClaims(fetchedClaims.reverse()); // Show newest first
+      } catch (err) {
+        console.error("Error fetching claims:", err);
+        setError("Failed to load claim history. Please try again later.");
+      } finally {
+        setIsLoading(false);
       }
-
-      setClaims(fetchedClaims.reverse()) // Show newest first
-      setIsLoading(false)
     }
 
-    fetchClaims()
-  }, [claimsCount, contractAddress, jarId])
-
-  const fetchClaim = async (index: number): Promise<Claim | null> => {
-    try {
-      const result = await fetch(`/api/claims?jarId=${jarId}&index=${index}`)
-      if (!result.ok) throw new Error("Failed to fetch claim")
-      return await result.json()
-    } catch (error) {
-      console.error("Error fetching claim:", error)
-      return null
-    }
-  }
+    fetchClaims();
+  }, [claimsCount, contractAddress, jarId]);
 
   if (isLoading) {
     return (
@@ -88,7 +126,25 @@ export function ClaimHistory({ jarId }: ClaimHistoryProps) {
           </div>
         </CardContent>
       </Card>
-    )
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Claim History</CardTitle>
+          <CardDescription>Recent withdrawals from this jar</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (claims.length === 0) {
@@ -102,7 +158,7 @@ export function ClaimHistory({ jarId }: ClaimHistoryProps) {
           <div className="text-center py-6 text-muted-foreground">No claims have been made from this jar yet.</div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
@@ -138,6 +194,5 @@ export function ClaimHistory({ jarId }: ClaimHistoryProps) {
         </Table>
       </CardContent>
     </Card>
-  )
+  );
 }
-

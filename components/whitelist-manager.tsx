@@ -14,9 +14,10 @@ import { WhitelistTable } from "@/components/whitelist-table"
 
 interface WhitelistManagerProps {
   jarId: string
+  onActionSuccess?: () => void
 }
 
-export function WhitelistManager({ jarId }: WhitelistManagerProps) {
+export function WhitelistManager({ jarId, onActionSuccess }: WhitelistManagerProps) {
   const { toast } = useToast()
   const [whitelistAddress, setWhitelistAddress] = useState("")
   const [blacklistAddress, setBlacklistAddress] = useState("")
@@ -52,6 +53,7 @@ export function WhitelistManager({ jarId }: WhitelistManagerProps) {
         })
         setWhitelistAddress("")
         setIsAddingToWhitelist(false)
+        if (onActionSuccess) onActionSuccess()
       })
     },
     onError(error) {
@@ -88,6 +90,7 @@ export function WhitelistManager({ jarId }: WhitelistManagerProps) {
         })
         setBlacklistAddress("")
         setIsAddingToBlacklist(false)
+        if (onActionSuccess) onActionSuccess()
       })
     },
     onError(error) {
@@ -124,6 +127,7 @@ export function WhitelistManager({ jarId }: WhitelistManagerProps) {
         })
         setAdminAddress("")
         setIsAddingAdmin(false)
+        if (onActionSuccess) onActionSuccess()
       })
     },
     onError(error) {
@@ -231,7 +235,7 @@ export function WhitelistManager({ jarId }: WhitelistManagerProps) {
               </Button>
             </div>
 
-            <WhitelistTable jarId={jarId} type="whitelist" />
+            <WhitelistTable jarId={jarId} type="whitelist" onActionSuccess={onActionSuccess} />
           </CardContent>
         </Card>
       </TabsContent>
@@ -254,7 +258,7 @@ export function WhitelistManager({ jarId }: WhitelistManagerProps) {
               </Button>
             </div>
 
-            <WhitelistTable jarId={jarId} type="blacklist" />
+            <WhitelistTable jarId={jarId} type="blacklist" onActionSuccess={onActionSuccess} />
           </CardContent>
         </Card>
       </TabsContent>
@@ -277,11 +281,10 @@ export function WhitelistManager({ jarId }: WhitelistManagerProps) {
               </Button>
             </div>
 
-            <WhitelistTable jarId={jarId} type="admin" />
+            <WhitelistTable jarId={jarId} type="admin" onActionSuccess={onActionSuccess} />
           </CardContent>
         </Card>
       </TabsContent>
     </Tabs>
   )
 }
-

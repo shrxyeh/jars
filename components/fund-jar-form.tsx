@@ -1,133 +1,152 @@
-"use client"
-
-import { useState } from "react"
-import { useContractWrite, usePrepareContractWrite } from "wagmi"
-import { parseEther } from "viem"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import * as z from "zod"
-import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/components/ui/use-toast"
-import { JarSystemABI } from "@/lib/abis"
-import { getContractAddress } from "@/lib/contracts"
-import { isNativeToken } from "@/lib/tokens"
+import { useState, useEffect } from "react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { formatEther } from "viem"
+import { useAccount } from "wagmi"
+import { useCanWithdraw } from "@/hooks/use-can-withdraw"
+import { useIsJarAdmin } from "@/hooks/use-is-jar-admin"
 import type { Jar } from "@/types/jar"
+import { getTokenSymbol } from "@/lib/tokens"
+import { getTimeUntilNextWithdrawal } from "@/hooks/use-time-until-next-withdrawal"
+import { Button } from "@/components/ui/button"
+import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { FundJarForm } from "@/components/fund-jar-form"
+import { RefreshCw } from "lucide-react"
 
-const formSchema = z.object({
-  amount: z.string().min(1, "Amount is required"),
-})
-
-interface FundJarFormProps {
+interface JarDetailsProps {
   jar: Jar
-  onFundSuccess?: () => void
+  onRefresh?: () => void
 }
 
-export function FundJarForm({ jar, onFundSuccess }: FundJarFormProps) {
-  const { toast } = useToast()
-  const [isFunding, setIsFunding] = useState(false)
-  const contractAddress = getContractAddress(jar.chainId)
+export function JarDetails({ jar, onRefresh }: JarDetailsProps) {
+  const { address } = useAccount()
+  const { canWithdraw, isLoading: isLoadingWithdraw } = useCanWithdraw(jar.id, address)
+  const { isAdmin, isLoading: isLoadingAdmin } = useIsJarAdmin(jar.id, address)
+  const { timeUntil, isLoading: isLoadingTime } = getTimeUntilNextWithdrawal(jar.id, address)
+  const [countdown, setCountdown] = useState<string>("")
+  const [fundDialogOpen, setFundDialogOpen] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      amount: "",
-    },
-  })
+  const tokenSymbol = getTokenSymbol(jar.tokenAddress, jar.chainId)
+  const formattedBalance = formatEther(BigInt(jar.balance))
 
-  const watchedAmount = form.watch("amount")
-  const isNative = isNativeToken(jar.tokenAddress)
+  useEffect(() => {
+    if (!isLoadingTime && timeUntil > 0) {
+      const interval = setInterval(() => {
+        const seconds = Math.floor(timeUntil % 60)
+        const minutes = Math.floor((timeUntil / 60) % 60)
+        const hours = Math.floor((timeUntil / (60 * 60)) % 24)
+        const days = Math.floor(timeUntil / (60 * 60 * 24))
 
-  // Prepare the transaction
-  const { config } = usePrepareContractWrite({
-    address: contractAddress,
-    abi: JarSystemABI,
-    functionName: "fundJar",
-    args: [BigInt(jar.id), parseEther(watchedAmount || "0")],
-    value: isNative ? parseEther(watchedAmount || "0") : BigInt(0),
-    enabled: Boolean(
-      contractAddress && 
-      watchedAmount && 
-      parseFloat(watchedAmount) > 0
-    ),
-  })
+        setCountdown(
+          `${days > 0 ? `${days}d ` : ""}${hours.toString().padStart(2, "0")}:${minutes
+            .toString()
+            .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`,
+        )
+      }, 1000)
 
-  // Execute the transaction
-  const { write } = useContractWrite({
-    ...config,
-    onSuccess(data) {
-      toast({
-        title: "Funding Initiated",
-        description: "Your transaction has been submitted. Please wait for confirmation.",
-      })
+      return () => clearInterval(interval)
+    }
+  }, [timeUntil, isLoadingTime])
 
-      data.wait().then(() => {
-        toast({
-          title: "Jar Funded Successfully",
-          description: `You've successfully added ${watchedAmount} ${jar.tokenSymbol} to the jar.`,
-        })
-        form.reset()
-        setIsFunding(false)
-        if (onFundSuccess) onFundSuccess()
-      })
-    },
-    onError(error) {
-      toast({
-        title: "Error Funding Jar",
-        description: error.message,
-        variant: "destructive",
-      })
-      setIsFunding(false)
-    },
-  })
+  const handleRefresh = () => {
+    if (onRefresh) {
+      setIsRefreshing(true)
+      onRefresh()
+      setTimeout(() => setIsRefreshing(false), 1000)
+    }
+  }
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    setIsFunding(true)
-    if (write) {
-      write()
-    } else {
-      toast({
-        title: "Error",
-        description: "Unable to submit transaction. Please check your inputs and try again.",
-        variant: "destructive",
-      })
-      setIsFunding(false)
+  const handleFundSuccess = () => {
+    setFundDialogOpen(false)
+    if (onRefresh) {
+      setTimeout(() => onRefresh(), 1000)
     }
   }
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Fund This Jar</CardTitle>
-        <CardDescription>Add more {jar.tokenSymbol} to support this jar</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount to Fund</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.000001" min="0" placeholder="0.0" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Enter the amount of {jar.tokenSymbol} you want to add to this jar
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+      <CardContent className="pt-6">
+        <div className="flex flex-col md:flex-row justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{jar.title}</h1>
+              <div className="flex gap-2">
+                {jar.accessControlType !== "Open" && <Badge variant="outline">{jar.accessControlType}</Badge>}
+                {isAdmin && <Badge>Admin</Badge>}
+              </div>
+            </div>
+            <p className="text-muted-foreground">{jar.description}</p>
+          </div>
 
-            <Button type="submit" disabled={isFunding} className="w-full">
-              {isFunding ? "Processing..." : `Fund with ${jar.tokenSymbol}`}
-            </Button>
-          </form>
-        </Form>
+          <div className="flex flex-col items-end justify-center">
+            <div className="flex items-center gap-2">
+              <div className="text-3xl font-bold">
+                {formattedBalance} {tokenSymbol}
+              </div>
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={handleRefresh}
+                className={isRefreshing ? "animate-spin" : ""}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="text-sm text-muted-foreground">Current Balance</div>
+            <Dialog open={fundDialogOpen} onOpenChange={setFundDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="mt-2">
+                  Fund This Jar
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Fund Jar</DialogTitle>
+                  <DialogDescription>
+                    Add funds to support this jar's purpose
+                  </DialogDescription>
+                </DialogHeader>
+                <FundJarForm jar={jar} onFundSuccess={handleFundSuccess} />
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div className="p-4 bg-muted rounded-lg">
+            <div className="text-sm text-muted-foreground">Max Withdrawal</div>
+            <div className="font-medium">
+              {jar.maxWithdrawalAmount ? `${formatEther(BigInt(jar.maxWithdrawalAmount))} ${tokenSymbol}` : "No limit"}
+            </div>
+          </div>
+
+          <div className="p-4 bg-muted rounded-lg">
+            <div className="text-sm text-muted-foreground">Cooldown Period</div>
+            <div className="font-medium">{jar.cooldownPeriod ? `${jar.cooldownPeriod / 60} minutes` : "None"}</div>
+          </div>
+
+          <div className="p-4 bg-muted rounded-lg">
+            <div className="text-sm text-muted-foreground">Withdrawal Status</div>
+            <div className="font-medium">
+              {isLoadingWithdraw ? (
+                "Loading..."
+              ) : canWithdraw ? (
+                <span className="text-green-500">Available</span>
+              ) : (
+                <span className="text-yellow-500">{countdown ? `Cooldown: ${countdown}` : "Not Available"}</span>
+              )}
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

@@ -32,6 +32,7 @@ import {
 interface AdminPanelProps {
   jarId: string
   jar: Jar
+  onActionSuccess?: () => void
 }
 
 const updateJarSchema = z.object({
@@ -45,7 +46,7 @@ const emergencyWithdrawSchema = z.object({
   recipient: z.string().min(42, "Please enter a valid Ethereum address"),
 })
 
-export function AdminPanel({ jarId, jar }: AdminPanelProps) {
+export function AdminPanel({ jarId, jar, onActionSuccess }: AdminPanelProps) {
   const { toast } = useToast()
   const [isUpdating, setIsUpdating] = useState(false)
   const [isEmergencyWithdrawing, setIsEmergencyWithdrawing] = useState(false)
@@ -98,6 +99,7 @@ export function AdminPanel({ jarId, jar }: AdminPanelProps) {
           description: "The jar parameters have been updated.",
         })
         setIsUpdating(false)
+        if (onActionSuccess) onActionSuccess()
       })
     },
     onError(error) {
@@ -133,6 +135,7 @@ export function AdminPanel({ jarId, jar }: AdminPanelProps) {
           description: "All funds have been withdrawn from the jar.",
         })
         setIsEmergencyWithdrawing(false)
+        if (onActionSuccess) onActionSuccess()
       })
     },
     onError(error) {
@@ -168,6 +171,7 @@ export function AdminPanel({ jarId, jar }: AdminPanelProps) {
           description: "The jar has been deleted.",
         })
         setIsDeleting(false)
+        if (onActionSuccess) onActionSuccess()
       })
     },
     onError(error) {
@@ -307,7 +311,7 @@ export function AdminPanel({ jarId, jar }: AdminPanelProps) {
       </TabsContent>
 
       <TabsContent value="whitelist" className="space-y-4 py-4">
-        <WhitelistManager jarId={jarId} />
+        <WhitelistManager jarId={jarId} onActionSuccess={onActionSuccess} />
       </TabsContent>
 
       <TabsContent value="danger" className="space-y-4 py-4">
@@ -377,4 +381,3 @@ export function AdminPanel({ jarId, jar }: AdminPanelProps) {
     </Tabs>
   )
 }
-
