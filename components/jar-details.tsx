@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { formatEther } from "viem"
@@ -9,18 +10,32 @@ import { useIsJarAdmin } from "@/hooks/use-is-jar-admin"
 import type { Jar } from "@/types/jar"
 import { getTokenSymbol } from "@/lib/tokens"
 import { getTimeUntilNextWithdrawal } from "@/hooks/use-time-until-next-withdrawal"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { FundJarForm } from "@/components/fund-jar-form"
+import { RefreshCw } from "lucide-react"
 
 interface JarDetailsProps {
   jar: Jar
+  onRefresh?: () => void
 }
 
-export function JarDetails({ jar }: JarDetailsProps) {
+export function JarDetails({ jar, onRefresh }: JarDetailsProps) {
   const { address } = useAccount()
   const { canWithdraw, isLoading: isLoadingWithdraw } = useCanWithdraw(jar.id, address)
   const { isAdmin, isLoading: isLoadingAdmin } = useIsJarAdmin(jar.id, address)
   const { timeUntil, isLoading: isLoadingTime } = getTimeUntilNextWithdrawal(jar.id, address)
   const [countdown, setCountdown] = useState<string>("")
+  const [fundDialogOpen, setFundDialogOpen] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const tokenSymbol = getTokenSymbol(jar.tokenAddress, jar.chainId)
   const formattedBalance = formatEther(BigInt(jar.balance))
@@ -44,6 +59,21 @@ export function JarDetails({ jar }: JarDetailsProps) {
     }
   }, [timeUntil, isLoadingTime])
 
+  const handleRefresh = () => {
+    if (onRefresh) {
+      setIsRefreshing(true)
+      onRefresh()
+      setTimeout(() => setIsRefreshing(false), 1000)
+    }
+  }
+
+  const handleFundSuccess = () => {
+    setFundDialogOpen(false)
+    if (onRefresh) {
+      setTimeout(() => onRefresh(), 1000)
+    }
+  }
+
   return (
     <Card>
       <CardContent className="pt-6">
@@ -60,10 +90,37 @@ export function JarDetails({ jar }: JarDetailsProps) {
           </div>
 
           <div className="flex flex-col items-end justify-center">
-            <div className="text-3xl font-bold">
-              {formattedBalance} {tokenSymbol}
+            <div className="flex items-center gap-2">
+              <div className="text-3xl font-bold">
+                {formattedBalance} {tokenSymbol}
+              </div>
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={handleRefresh}
+                className={isRefreshing ? "animate-spin" : ""}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
             <div className="text-sm text-muted-foreground">Current Balance</div>
+            <Dialog open={fundDialogOpen} onOpenChange={setFundDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="mt-2">
+                  Fund This Jar
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Fund Jar</DialogTitle>
+                  <DialogDescription>
+                    Add funds to support this jar's purpose
+                  </DialogDescription>
+                </DialogHeader>
+                <FundJarForm jar={jar} onFundSuccess={handleFundSuccess} />
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -97,4 +154,3 @@ export function JarDetails({ jar }: JarDetailsProps) {
     </Card>
   )
 }
-
